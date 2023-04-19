@@ -15,7 +15,9 @@ When developers implement the Caisse-AP IP protocol in a point of sale software,
 
 # Installation
 
-The client doesn't require any specific Python lib.
+The client needs the [iso4217](https://github.com/dahlia/iso4217) Python lib (not needed when using `EUR` only).
+
+    pip3 install iso4217
 
 The server requires the [Twisted](https://twisted.org/) Python lib:
 

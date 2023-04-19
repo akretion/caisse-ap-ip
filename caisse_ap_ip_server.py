@@ -27,7 +27,7 @@ from twisted.internet import protocol, reactor, endpoints
 from pprint import pprint
 
 __author__ = "Rémi de Lattre <remi@miluni.fr>"
-__date__ = "Avril 2023"
+__date__ = "April 2023"
 __version__ = "0.1"
 
 logger = logging.getLogger(__name__)
@@ -79,23 +79,27 @@ class CaisseAP(protocol.Protocol):
             answer_dict['AF'] = '09'
             immediate = True
 
-        ba = data_dict.get('BA', '0')
-        if ba == '1':
+        ba_tag = data_dict.get('BA', '0')
+        if ba_tag == '1':
             immediate = True
-            answer_dict['AE'] = '11'  # AE = 11(requete prise en compte) et pas de tag 'AF'
+            answer_dict['AE'] = '11'  # AE = 11(request took into account) => no 'AF'
         elif args.failure:
-            answer_dict['AE'] = '01'  # AE = 01(opération non effectuée)
-            answer_dict['AF'] = failure_type_AF_dict[args.failure_type]  # AF = informations complémentaires au statut global de l’action (si raté)
+            answer_dict['AE'] = '01'  # AE = 01(operation not done)
+            # AF = Complement of action status (AE). Only present on failures
+            answer_dict['AF'] = failure_type_AF_dict[args.failure_type]
         else:
-            answer_dict['AE'] = '10'  # AE = 10(opération effectuée)
+            answer_dict['AE'] = '10'  # AE = 10(operation done)
 
         if not immediate:
             time.sleep(args.duration)
 
         if not args.failure and not immediate:
 
-            if 'CC' not in data_dict:
-                answer_dict['CC'] = payment_type_CC_dict[args.payment_type]  # CC = mode règlement souhaité par la caisse (fonction de commande : -pt)
+            # CC = Payment mode
+            # Set by client only if it's a check
+            # otherwise, only present in the answer
+            if 'CC' not in data_dict:  # means "if not a check"
+                answer_dict['CC'] = payment_type_CC_dict[args.payment_type]
                 CI_dict = {
                     'cbcontact': '1',
                     'cbcontactless': '2',
@@ -104,22 +108,25 @@ class CaisseAP(protocol.Protocol):
                 }
                 answer_dict['CI'] = CI_dict[args.payment_type]
 
-            answer_dict['AC'] = str(random.randint(100000, 999999))  # AC = numéro d’autorisation de la transaction (peu important)
+                # AC = authorisation number
+                answer_dict['AC'] = str(random.randint(100000, 999999))
 
-            nb1 = random.randint(100000, 999999)
-            nb2 = random.randint(1000, 9999)
-            aa = '%s######%s' % (nb1, nb2)  # AA = numéro de carte bleue (16 chiffres)
-            answer_dict['AA'] = aa
+                # AA = payment card number
+                nb1 = random.randint(100000, 999999)
+                nb2 = random.randint(1000, 9999)
+                answer_dict['AA'] = '%s######%s' % (nb1, nb2)
+                # AI = AID of the payment card
+                answer_dict['AI'] = 'A00000000%s' % random.randint(10000, 999999999999)
+                # AB = expiry date of the payment card (format YYMM)
+                next_year = str(time.gmtime().tm_year + 1)[2:]
+                month = str(random.randint(1, 12)).zfill(2)
+                answer_dict['AB'] = '%s%s' % (next_year, month)
 
-            answer_dict['CF'] = '1010000000'  # CF = données à transmettre à l’application de paiement ou récupération d’informations (inutile)
+            # CF = private data
+            answer_dict['CF'] = '1010000000'
 
-            answer_dict['CG'] = args.seller_contract  # CG = numéro de contrat qui a effectué la transaction
-
-            answer_dict['AI'] = 'A00000000%s' % random.randint(10000, 999999999999)  # AI = AID de la carte qui a réalisé la transaction (peu important)
-
-            next_year = str(time.gmtime().tm_year + 1)[2:]
-            month = str(random.randint(1, 12)).zfill(2)
-            answer_dict['AB'] = '%s%s' % (next_year, month)  # AB = date de fin de validité de la carte utilisée (format AAMM)
+            # CG = seller contract number
+            answer_dict['CG'] = args.seller_contract
 
         logger.info('Answer structured data:')
         pprint(answer_dict)
@@ -175,20 +182,20 @@ def main(args):
         failure_type = args.failure_type.lower()
         if failure_type not in failure_type_AF_dict:
             logger.error(
-                'Wrong value for failure_type (%s). Possible values : %s',
+                'Wrong value for failure type (%s). Possible values : %s',
                 args.failure_type, ', '.join(failure_type_AF_dict.keys()))
             sys.exit(1)
         if args.failure_type != 'abandon' and not args.failure:
             logger.warning(
-                'Failure tyoe option is ignored because the failure option is not set.')
+                'Failure type option is ignored because the failure option is not set.')
         payment_type = args.payment_type.lower()
         if payment_type not in payment_type_CC_dict:
             logger.error(
-                'Wrong value for payment_type (%s). Possible values : %s',
+                'Wrong value for payment type (%s). Possible values : %s',
                 args.payment_type, ', '.join(payment_type_CC_dict.keys()))
             sys.exit(1)
     if len(args.seller_contract) > 10:
-        logger.error('Wrong seller contract (%s). 10 characters max.' % args.seller_contract)
+        logger.error('Wrong seller contract (%s): 10 characters max.' % args.seller_contract)
         sys.exit(1)
 
     endpoints.serverFromString(reactor, "tcp:%s" % args.port).listen(CaisseAPFactory(args))
@@ -196,41 +203,42 @@ def main(args):
 
 
 if __name__ == '__main__':
-    usage = "caisse_ap_ip_simulator"
+    usage = "caisse_ap_ip_simulator.py"
     epilog = "Author: %s - Version: %s" % (__author__, __version__)
-    description = "This script generate a simulator of payment terminal. "
+    description = "This script is a server for Caisse-AP over IP protocol. "
+    "It simulates a payment terminal."
 
     parser = argparse.ArgumentParser(
         usage=usage, epilog=epilog, description=description)
     parser.add_argument(
         '-l', '--log-level', dest='log_level', default='info',
-        help="Set log level. Possible values: debug, info, warn, error. "
+        help="Log level. Possible values: debug, info, warn, error. "
         "Default value: info.")
     parser.add_argument(
         '-p', '--port', dest='port', type=int, default=8888,
-        help="Set listening TCP port. Default value : 8888.")
+        help="Listening TCP port. Default value : 8888.")
     parser.add_argument(
         '-f', '--failure', dest='failure',
         action='store_true', help="If set, the simulator will return all payment "
-        "requests as failures.(Otherwise all payment requests will be returned "
-        "as successfull.)")
+        "requests as failures (otherwise all payment requests will be returned "
+        "as success).")
     parser.add_argument(
         '-ft', '--failure-type', dest='failure_type', default='abandon',
-        help="Set failure type. Possible values : abandon, timeout, "
+        help="Failure type. Possible values : abandon, timeout, "
         "refused, forbidden. Default value: abandon.")
     parser.add_argument(
         '-d', '--duration', dest='duration', type=int, default=3,
-        help="Set the delay in seconds between the payment request and the return"
-        " message. Will be ignored if the immediate option is set by the client (BA = 1). Default time : "
-        "3 sec.")
+        help="Delay in seconds between the payment request and the return message. "
+        "Ignored if the immediate option is set by the client (BA = 1). "
+        "Default timeout: 3 seconds.")
     parser.add_argument(
-        '-pt', '--payment_type', dest='payment_type', default='cbcontact',
-        help="Set the payment type returned when not set in the payment request. "
+        '-pt', '--payment-type', dest='payment_type', default='cbcontact',
+        help="Payment type for payment card transactions (unrelevant for payment by check). "
         "Possible values : cbcontact, cbcontactless, amexcontact, amexcontactless. "
-        "Default value : cbcontact")
+        "Default value : cbcontact.")
     parser.add_argument(
-        '-sc', '--seller_contract', dest='seller_contract', default="424242",
-        help="Set seller contract reference.(10 characters max)")
+        '-sc', '--seller-contract', dest='seller_contract', default="424242",
+        help="Seller contract reference (10 characters max).")
 
     args = parser.parse_args()
     main(args)
