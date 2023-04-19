@@ -29,6 +29,10 @@ The client and server script both have an option `--help` (or `-h`) that display
 
 The server can be configured to simulate successful payment transaction, but also payment failures or timeouts.
 
+# Tests
+
+To develop this project, we used an **Ingenico Desk/5000** (with application `CONCERT V3` version `8400740115`) with check printer **Ingenico i2200**. We made real card payments and printed real checks.
+
 # Author
 
 - Rémi de Lattre
