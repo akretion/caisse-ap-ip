@@ -71,6 +71,8 @@ class CaisseAP(protocol.Protocol):
 
         immediate = False
 
+        check = data_dict.get('CC') == '00C'
+        logger.debug('check=%s', check)
         answer_dict = dict(data_dict)
 
         mandatory_tags = ["CZ", "CJ", "CA", "CB", "CD", "CE"]
@@ -86,7 +88,13 @@ class CaisseAP(protocol.Protocol):
         elif args.failure:
             answer_dict['AE'] = '01'  # AE = 01(operation not done)
             # AF = Complement of action status (AE). Only present on failures
-            answer_dict['AF'] = failure_type_AF_dict[args.failure_type]
+            if check:
+                # From our experience, for checks, Ingenico always answers 04
+                # (press on red button or check inserted wrong side)
+                answer_dict['AF'] = '04'
+            else:
+                answer_dict['AF'] = failure_type_AF_dict[args.failure_type]
+
         else:
             answer_dict['AE'] = '10'  # AE = 10(operation done)
 
@@ -98,7 +106,7 @@ class CaisseAP(protocol.Protocol):
             # CC = Payment mode
             # Set by client only if it's a check
             # otherwise, only present in the answer
-            if 'CC' not in data_dict:  # means "if not a check"
+            if not check:
                 answer_dict['CC'] = payment_type_CC_dict[args.payment_type]
                 CI_dict = {
                     'cbcontact': '1',
@@ -122,11 +130,11 @@ class CaisseAP(protocol.Protocol):
                 month = str(random.randint(1, 12)).zfill(2)
                 answer_dict['AB'] = '%s%s' % (next_year, month)
 
-            # CF = private data
-            answer_dict['CF'] = '1010000000'
+                # CF = private data
+                answer_dict['CF'] = '1010000000'
 
-            # CG = seller contract number
-            answer_dict['CG'] = args.seller_contract
+                # CG = seller contract number
+                answer_dict['CG'] = args.seller_contract
 
         logger.info('Answer structured data:')
         pprint(answer_dict)
@@ -191,14 +199,22 @@ def main(args):
         payment_type = args.payment_type.lower()
         if payment_type not in payment_type_CC_dict:
             logger.error(
-                'Wrong value for payment type (%s). Possible values : %s',
+                'Wrong value for payment type (%s). Possible values: %s',
                 args.payment_type, ', '.join(payment_type_CC_dict.keys()))
             sys.exit(1)
+    if args.failure:
+        logger.info(
+            "Start in failure mode: all payment requests will fail with type '%s'.",
+            args.failure_type)
+    else:
+        logger.info('Start in success mode: all payment requests will succeed.')
+
     if len(args.seller_contract) > 10:
         logger.error('Wrong seller contract (%s): 10 characters max.' % args.seller_contract)
         sys.exit(1)
 
     endpoints.serverFromString(reactor, "tcp:%s" % args.port).listen(CaisseAPFactory(args))
+    logger.info('Listening on TCP port %s', args.port)
     reactor.run()
 
 
