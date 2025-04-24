@@ -68,7 +68,6 @@ def main(args):
         'CJ': '012345678901',  # Identifiant Protocole Concert
         'CA': '01',  # caisse number
         'CE': cur_num,  # Currency ISO number
-        'BF': '0',  # 0 = partial payment disallowed
         'BA': '0',  # 1 = immediate answer ; 0 = answer at the end of transaction
     }
 
